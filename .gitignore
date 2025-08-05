@@ -1,0 +1,255 @@
+# .gitignore for the Multi-Robot Task Orchestration and Delegation Platform (MRTODP)
+# Purpose: Ignores artifacts from C++, Python, Lisp, Julia, Scala, Rust, Go, Java, C, Assembly,
+# Verilog, MATLAB, Lua, Bash, C#, OCaml, Ada, Elixir, Zig, build outputs, environment files,
+# and logs to keep the repository clean. Ensures comprehensive coverage for all languages
+# used in MRTODP's AI-driven home manager and skills marketplace, aligning with the modular
+# structure defined in docs/architecture.md.
+
+# C++ artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.exe
+*.out
+*.gch
+*.pch
+CMakeFiles/
+cmake_install.cmake
+CMakeCache.txt
+Makefile
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pip_cache/
+*.egg-info/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Lisp artifacts
+*.fasl
+*.fas
+*.lib
+*.sbclrc
+quicklisp/
+quicklisp.lisp
+
+# Julia artifacts
+Manifest.toml
+LocalPreferences.toml
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+.julia/
+*.ipynb
+
+# Scala artifacts
+target/
+*.class
+*.jar
+*.war
+*.scala-build
+project/project/
+project/target/
+.metals/
+.bloop/
+.vscode-sbt/
+
+# Rust artifacts
+target/
+Cargo.lock
+*.rlib
+*.pdb
+
+# Go artifacts
+*.a
+*.o
+*.so
+bin/
+pkg/
+*.test
+*.out
+
+# Java artifacts
+*.class
+*.jar
+*.war
+*.ear
+target/
+build/
+.gradle/
+gradlew
+gradlew.bat
+
+# C artifacts
+*.o
+*.a
+*.so
+*.out
+*.obj
+
+# Assembly artifacts
+*.o
+*.obj
+*.lst
+*.s
+
+# Verilog artifacts
+*.vcd
+*.gtkw
+*.syn
+*.mr
+*.pvl
+*.synth
+*.bit
+*.bin
+*.hex
+
+# MATLAB artifacts
+*.m~
+*.mat
+*.slx
+*.fig
+*.mex*
+*.asv
+*.bak
+
+# Lua artifacts
+*.luac
+*.out
+*.o
+
+# Bash artifacts
+*.sh~
+*.log
+*.pid
+*.pid.lock
+
+# C# artifacts
+*.dll
+*.exe
+*.pdb
+*.mdb
+bin/
+obj/
+*.csproj.user
+*.suo
+*.cache
+
+# OCaml artifacts
+*.cmo
+*.cmi
+*.cmx
+*.cmxa
+*.cma
+*.o
+_build/
+*.byte
+*.native
+*.annot
+
+# Ada artifacts
+*.o
+*.ali
+*.adb~
+*.ads~
+*.gpr
+*.gpr~
+
+# Elixir/Erlang artifacts
+*.beam
+_build/
+deps/
+*.ez
+*.app
+*.rel
+*.script
+*.dump
+*.app.src
+
+# Zig artifacts
+zig-out/
+zig-cache/
+*.o
+*.obj
+*.exe
+
+# Build outputs
+build/
+dist/
+out/
+artifacts/
+tmp/
+temp/
+
+# Environment files
+.env
+*.env.local
+*.env.development
+*.env.test
+*.env.production
+
+# Logs
+*.log
+logs/
+*.log.*
+npm-debug.log*
+yarn-error.log*
+yarn-debug.log*
+
+# Docker and container-related files
+docker-compose.yml
+*.dockerignore
+*.docker
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Dependency directories
+node_modules/
+vendor/
+_deps/
+.deps/
+
+# Test and coverage reports
+coverage/
+*.cov
+lcov.info
+test-results/
+junit.xml
+
+# IDE and editor files
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+*.sublime-project
+*.sublime-workspace
+.metals/
+.bloop/
+
+# Robot-specific language artifacts (KRL, RAPID, KAREL, VAL3)
+*.dat
+*.ls
+*.mod
+*.prg
+*.src
+*.sub
+*.bak
+*.log
+
+# Project-specific directories
+backend/cpp/build/
+backend/python/__pycache__/
+backend/rust/target/
+backend/go/bin/
+backend/go/pkg/
+backend/java/target
