@@ -1,0 +1,138 @@
+```
+! backend/robot_langs/rapid/task.rapid
+! Purpose: Implements a task execution script for ABB robots in MRTODP using RAPID.
+! Supports tasks like 'fold laundry' with parameterized motion and tool control.
+! Interfaces with backend/cpp/robot_interface/ via a shared memory interface for
+! command reception and status reporting. Includes robust error handling for
+! motion failures, invalid parameters, and interface issues, ensuring reliability
+! for advanced users (e.g., robotics engineers) in a production environment.
+
+MODULE TaskExecution
+
+    ! Global variables
+    VAR string task_name;        ! Task name (e.g., "fold_laundry")
+    VAR num task_id;             ! Task identifier
+    VAR robtarget target_pos;    ! Target position for motion
+    VAR num velocity;            ! Motion velocity (mm/s)
+    VAR bool tool_active;        ! Tool activation state
+    VAR num error_code;          ! Error code for status reporting
+    VAR string status_msg;       ! Status message buffer
+
+    ! Shared memory variables (interface with backend/cpp/robot_interface/)
+    PERS num shm_cmd_id := 0;    ! Shared memory: Command ID
+    PERS string shm_task := "";  ! Shared memory: Task name
+    PERS num shm_params{6};      ! Shared memory: Task parameters (position, velocity)
+    PERS num shm_status := 0;    ! Shared memory: Status code (0: success, non-zero: error)
+    PERS string shm_msg := "";   ! Shared memory: Status message
+
+    ! Constants
+    CONST num SUCCESS := 0;
+    CONST num ERR_INVALID_TASK := 1;
+    CONST num ERR_MOTION_FAIL := 2;
+    CONST num ERR_SHM_FAIL := 3;
+    CONST num MAX_VELOCITY := 500.0; ! Max velocity (mm/s)
+
+    ! Main procedure
+    PROC main()
+        ! Initialize variables
+        task_id := 0;
+        task_name := "";
+        velocity := 100.0;
+        tool_active := FALSE;
+        error_code := SUCCESS;
+        status_msg := "Task initialized";
+        target_pos := [[0,0,0],[0,0,0,1],[0,0,0,0],[9E9,9E9,9E9,9E9,9E9,9E9]];
+
+        ! Main execution loop
+        WHILE TRUE DO
+            ! Read command from shared memory
+            IF shm_cmd_id > 0 THEN
+                task_id := shm_cmd_id;
+                task_name := shm_task;
+                velocity := shm_params{1};
+                target_pos.trans.x := shm_params{2};
+                target_pos.trans.y := shm_params{3};
+                target_pos.trans.z := shm_params{4};
+                target_pos.rot.q1 := shm_params{5};
+                tool_active := shm_params{6} > 0.0; ! Tool active if param > 0
+
+                ! Validate parameters
+                IF task_name = "" THEN
+                    error_code := ERR_INVALID_TASK;
+                    status_msg := "Invalid task name";
+                    GOTO error_handling;
+                ENDIF
+                IF velocity <= 0 OR velocity > MAX_VELOCITY THEN
+                    error_code := ERR_INVALID_TASK;
+                    status_msg := "Invalid velocity: " + NumToStr(velocity, 2);
+                    GOTO error_handling;
+                ENDIF
+
+                ! Execute task based on task_name
+                IF task_name = "fold_laundry" THEN
+                    ! Fold laundry task: Move to target position and activate tool
+                    MoveJ target_pos, v100, fine, tool0; ! Joint motion to target
+                    IF NOT IsValidPos(GetActPos(), target_pos) THEN
+                        error_code := ERR_MOTION_FAIL;
+                        status_msg := "Motion failed: Target not reached";
+                        GOTO error_handling;
+                    ENDIF
+                    IF tool_active THEN
+                        ! Activate folding tool (e.g., gripper)
+                        SetDO do10, 1; ! Assume digital output 10 controls tool
+                        WaitTime 2.0;  ! Simulate folding duration
+                        SetDO do10, 0;
+                    ENDIF
+                    error_code := SUCCESS;
+                    status_msg := "Fold laundry completed";
+                ELSE
+                    ! Unsupported task
+                    error_code := ERR_INVALID_TASK;
+                    status_msg := "Unsupported task: " + task_name;
+                    GOTO error_handling;
+                ENDIF
+
+                ! Write status to shared memory
+                shm_status := error_code;
+                shm_msg := status_msg;
+                shm_cmd_id := 0; ! Reset command ID to signal completion
+            ELSE
+                ! No command available, wait
+                WaitTime 0.1;
+            ENDIF
+            GOTO loop_end;
+
+        error_handling:
+            ! Write error status to shared memory
+            shm_status := error_code;
+            shm_msg := status_msg;
+            shm_cmd_id := 0;
+            Stop; ! Pause execution on error
+
+        loop_end:
+        ENDWHILE
+    ERROR
+        ! Handle runtime errors
+        IF ERRNO = ERR_POS_NOT_REACHED THEN
+            shm_status := ERR_MOTION_FAIL;
+            shm_msg := "Motion error: Position not reached";
+            shm_cmd_id := 0;
+            Stop;
+        ELSE
+            shm_status := ERR_SHM_FAIL;
+            shm_msg := "Unexpected error: " + NumToStr(ERRNO, 0);
+            shm_cmd_id := 0;
+            Stop;
+        ENDIF
+    ENDPROC
+
+    ! Utility function to check if positions are approximately equal
+    FUNC bool IsValidPos(robtarget act_pos, robtarget target_pos)
+        VAR num tolerance := 0.1; ! Position tolerance (mm)
+        RETURN Abs(act_pos.trans.x - target_pos.trans.x) < tolerance AND
+               Abs(act_pos.trans.y - target_pos.trans.y) < tolerance AND
+               Abs(act_pos.trans.z - target_pos.trans.z) < tolerance;
+    ENDFUNC
+
+ENDMODULE
+```
