@@ -1,0 +1,123 @@
+```css
+/* frontend/src/styles/tailwind.css */
+/* Purpose: Initializes Tailwind CSS with custom styles for MRTODP, complementing the CDN-based
+   Tailwind CSS setup. Defines robot-themed colors (metallic grays, futuristic blues) and responsive
+   design utilities for a modern, professional UI. Supports components like Navbar.js, TaskManager.js,
+   and Marketplace.js with consistent theming. Designed for advanced users (e.g., robotics engineers,
+   task planners) in a production environment. Includes detailed comments for maintainability. */
+
+/* Import Tailwind base, components, and utilities (assumes Tailwind CDN in index.html) */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom Tailwind layer for base styles */
+@layer base {
+  /* Apply a default font and background for the entire app */
+  html {
+    font-family: 'Inter', sans-serif;
+    @apply bg-gray-100;
+  }
+
+  /* Ensure smooth scrolling for better UX */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Define consistent typography for headings */
+  h1, h2, h3 {
+    @apply font-bold text-gray-800;
+  }
+}
+
+/* Custom Tailwind layer for component-specific styles */
+@layer components {
+  /* Custom button styles with robot-themed colors */
+  .btn-primary {
+    @apply bg-blue-700 text-white px-4 py-2 rounded-md hover:bg-blue-800 transition duration-300;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700 transition duration-300;
+  }
+
+  /* Card component for task and skill displays */
+  .card {
+    @apply bg-white p-6 rounded-lg shadow-md border border-gray-200 hover:shadow-lg transition duration-200;
+  }
+
+  /* Error alert style with metallic accent */
+  .alert-error {
+    @apply bg-red-100 border-l-4 border-red-500 text-red-700 p-4 rounded-md;
+  }
+
+  /* Responsive container for main content */
+  .container-main {
+    @apply container mx-auto px-4 sm:px-6 lg:px-8 py-8;
+  }
+}
+
+/* Custom Tailwind layer for utilities */
+@layer utilities {
+  /* Robot-themed color palette */
+  :root {
+    --metallic-gray: #4B5EAA; /* Industrial metallic gray for backgrounds */
+    --futuristic-blue: #1E40AF; /* Bright blue for primary actions */
+    --robot-accent: #6B7280; /* Subtle gray for secondary elements */
+    --success-green: #10B981; /* Green for success states */
+    --error-red: #EF4444; /* Red for error states */
+  }
+
+  /* Utility for applying metallic gray background */
+  .bg-metallic-gray {
+    background-color: var(--metallic-gray);
+  }
+
+  /* Utility for futuristic blue text */
+  .text-futuristic-blue {
+    color: var(--futuristic-blue);
+  }
+
+  /* Utility for hover effects with robot accent */
+  .hover\:bg-robot-accent:hover {
+    background-color: var(--robot-accent);
+  }
+
+  /* Responsive padding for navbar to account for fixed positioning */
+  .navbar-padding {
+    @apply pt-16 sm:pt-20;
+  }
+
+  /* Responsive typography sizes */
+  .text-responsive {
+    @apply text-base sm:text-lg lg:text-xl;
+  }
+}
+
+/* Media queries for additional responsive adjustments */
+@media (max-width: 640px) {
+  /* Reduce font sizes for mobile */
+  h1 {
+    @apply text-2xl;
+  }
+  h2 {
+    @apply text-lg;
+  }
+  .container-main {
+    @apply px-2 py-4;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1024px) {
+  /* Adjust padding for tablets */
+  .container-main {
+    @apply px-4 py-6;
+  }
+}
+
+/* Ensure charts are responsive */
+.chart-container {
+  max-width: 100%;
+  height: auto;
+}
+```
