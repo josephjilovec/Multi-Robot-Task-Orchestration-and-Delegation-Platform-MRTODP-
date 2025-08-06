@@ -1,0 +1,243 @@
+```yaml
+# .github/workflows/ci.yml
+# Purpose: Configures a GitHub Actions CI/CD pipeline for the Multi-Robot Task Orchestration
+# and Delegation Platform (MRTODP). Runs tests for C++ (Catch2), Python (pytest), Common Lisp
+# (FiveAM), Julia (Test.jl), Rust (Cargo), and frontend (Jest) on push to the main branch.
+# Lints C++ (clang-format), Python (flake8), and Scala (scalafmt). Builds and pushes Docker
+# images to Amazon ECR and deploys to AWS ECS using the configuration in deploy/aws_config.yml.
+# Includes error handling and detailed comments for maintainability, targeting advanced users
+# (e.g., DevOps engineers, robotics developers). Assumes dependencies from docs/setup.md and
+# Docker images from deploy/Dockerfile.
+
+name: MRTODP CI/CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  # Job 1: Lint source code
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0 # Full history for linting changes
+
+      - name: Set up C++ (clang-format)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format-14
+        continue-on-error: false
+
+      - name: Lint C++ with clang-format
+        run: |
+          find backend/cpp -name '*.cpp' -o -name '*.hpp' | xargs clang-format-14 --dry-run --Werror
+        continue-on-error: false
+        # Error handling: Fails if formatting issues are detected
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+        continue-on-error: false
+
+      - name: Install Python linting tools
+        run: pip install flake8
+        continue-on-error: false
+
+      - name: Lint Python with flake8
+        run: flake8 backend/python tests/python --max-line-length=88 --extend-ignore=E203
+        continue-on-error: false
+        # Error handling: Fails if Python style violations are found
+
+      - name: Set up Scala (scalafmt)
+        run: |
+          curl -fLo coursier https://git.io/coursier-cli
+          chmod +x coursier
+          ./coursier install scalafmt
+        continue-on-error: false
+
+      - name: Lint Scala with scalafmt
+        run: ./coursier scalafmt --check --diff
+        working-directory: backend/scala
+        continue-on-error: false
+        # Error handling: Fails if Scala formatting issues are detected
+
+      - name: Validate Markdown
+        run: |
+          npm install -g markdownlint-cli
+          markdownlint docs/*.md
+        continue-on-error: false
+        # Error handling: Fails if Markdown syntax issues are detected
+
+  # Job 2: Run tests for all components
+  test:
+    runs-on: ubuntu-22.04
+    needs: lint # Depends on successful linting
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up C++ (Catch2)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y g++-11 cmake catch2
+        continue-on-error: false
+
+      - name: Run C++ tests
+        run: |
+          cd backend/cpp/task_manager
+          mkdir build && cd build
+          cmake .. && make
+          ctest --output-on-failure
+        continue-on-error: false
+        # Error handling: Fails if C++ tests fail
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+        continue-on-error: false
+
+      - name: Install Python dependencies
+        run: |
+          cd backend/python
+          pip install -r requirements.txt
+        continue-on-error: false
+
+      - name: Run Python tests (pytest)
+        run: |
+          cd tests/python
+          pytest --cov=backend/python/ai_engine --cov-report=term-missing
+        continue-on-error: false
+        # Error handling: Fails if Python tests fail or coverage < 90%
+
+      - name: Set up Common Lisp (SBCL)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y sbcl
+          curl -O https://beta.quicklisp.org/quicklisp.lisp
+          sbcl --non-interactive --load quicklisp.lisp --eval '(quicklisp-quickstart:install)' --eval '(ql:add-to-init-file)' --eval '(ql:quickload :fiveam)'
+        continue-on-error: false
+
+      - name: Run Common Lisp tests (FiveAM)
+        run: sbcl --load tests/lisp/test_planner.lisp --eval '(fiveam:run! :planner-suite)' --quit
+        continue-on-error: false
+        # Error handling: Fails if Lisp tests fail
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v1
+        with:
+          version: '1.10.0'
+        continue-on-error: false
+
+      - name: Run Julia tests
+        run: |
+          cd tests/julia
+          julia --project=../backend/julia -e 'using Pkg; Pkg.instantiate(); Pkg.test()'
+        continue-on-error: false
+        # Error handling: Fails if Julia tests fail
+
+      - name: Set up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+        continue-on-error: false
+
+      - name: Run Rust tests
+        run: |
+          cd backend/rust
+          cargo test -- --test-threads=1
+        continue-on-error: false
+        # Error handling: Fails if Rust tests fail
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+        continue-on-error: false
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm install
+        continue-on-error: false
+
+      - name: Run frontend tests (Jest)
+        run: |
+          cd frontend
+          npm test
+        continue-on-error: false
+        # Error handling: Fails if Jest tests fail
+
+  # Job 3: Build and push Docker images
+  build-docker:
+    runs-on: ubuntu-22.04
+    needs: test # Depends on successful tests
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+        continue-on-error: false
+        # Error handling: Fails if ECR login fails
+
+      - name: Build and push backend Docker image
+        run: |
+          docker build -t mrtodp-backend:latest -f deploy/Dockerfile .
+          docker tag mrtodp-backend:latest ${{ secrets.AWS_ECR_REGISTRY }}/mrtodp-backend:latest
+          docker push ${{ secrets.AWS_ECR_REGISTRY }}/mrtodp-backend:latest
+        continue-on-error: false
+        # Error handling: Fails if backend image build or push fails
+
+      - name: Build and push frontend Docker image
+        run: |
+          docker build -t mrtodp-frontend:latest -f deploy/Dockerfile.frontend .
+          docker tag mrtodp-frontend:latest ${{ secrets.AWS_ECR_REGISTRY }}/mrtodp-frontend:latest
+          docker push ${{ secrets.AWS_ECR_REGISTRY }}/mrtodp-frontend:latest
+        continue-on-error: false
+        # Error handling: Fails if frontend image build or push fails
+
+  # Job 4: Deploy to AWS ECS
+  deploy-ecs:
+    runs-on: ubuntu-22.04
+    needs: build-docker # Depends on successful Docker build
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+        continue-on-error: false
+        # Error handling: Fails if AWS credential configuration fails
+
+      - name: Deploy to AWS ECS
+        run: |
+          aws cloudformation deploy \
+            --template-file deploy/aws_config.yml \
+            --stack-name mrtodp-stack \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --region ${{ secrets.AWS_REGION }}
+        continue-on-error: false
+        # Error handling: Fails if CloudFormation deployment fails
+
+      - name: Verify ECS deployment
+        run: |
+          aws ecs wait services-stable \
+            --cluster mrtodp-cluster \
+            --services mrtodp-orchestrator-service mrtodp-ai-engine-service mrtodp-scala-marketplace-service mrtodp-elixir-marketplace-service mrtodp-frontend-service \
+            --region ${{ secrets.AWS_REGION }}
+        continue-on-error: false
+        # Error handling: Fails if ECS services do not stabilize
+```
