@@ -1,0 +1,435 @@
+```yaml
+# deploy/kubernetes.yml
+# Purpose: Deploys the Multi-Robot Task Orchestration and Delegation Platform (MRTODP) on
+# Kubernetes, defining pods for the C++ orchestrator, Python AI engine, Scala/Elixir
+# marketplace, and React frontend. Configures resource limits (CPU, GPU, memory) and exposes
+# port 5000 via a ClusterIP service. Includes horizontal pod autoscaling (HPA) for scalability
+# and detailed comments for maintainability, targeting advanced users (e.g., DevOps engineers,
+# robotics developers). Assumes the Docker image from deploy/Dockerfile and aligns with
+# architecture.md and setup.md.
+
+---
+# Service to expose MRTODP API on port 5000
+apiVersion: v1
+kind: Service
+metadata:
+  name: mrtodp-service
+  labels:
+    app: mrtodp
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5000
+      targetPort: 5000
+      protocol: TCP
+      name: http
+  selector:
+    app: mrtodp
+---
+# Deployment for C++ Orchestrator
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrtodp-orchestrator
+  labels:
+    app: mrtodp
+    component: orchestrator
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mrtodp
+      component: orchestrator
+  template:
+    metadata:
+      labels:
+        app: mrtodp
+        component: orchestrator
+    spec:
+      containers:
+        - name: orchestrator
+          image: mrtodp-backend:latest
+          command: ["/bin/bash", "-c", "source /opt/ros/humble/setup.bash && /app/backend/cpp/task_manager/build/orchestrator"]
+          env:
+            - name: ROS_MASTER_URI
+              value: "http://localhost:11311"
+            - name: SQLITE_DB_PATH
+              value: "/app/data/tasks.db"
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+            requests:
+              cpu: "0.5"
+              memory: "256Mi"
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: data-volume
+          emptyDir: {}
+---
+# Deployment for Python AI Engine
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrtodp-ai-engine
+  labels:
+    app: mrtodp
+    component: ai-engine
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mrtodp
+      component: ai-engine
+  template:
+    metadata:
+      labels:
+        app: mrtodp
+        component: ai-engine
+    spec:
+      containers:
+        - name: ai-engine
+          image: mrtodp-backend:latest
+          command: ["/bin/bash", "-c", "cd /app/backend/python/ai_engine && python3 cli.py"]
+          env:
+            - name: GRPC_SERVER
+              value: "localhost:50051"
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+              nvidia.com/gpu: "1" # For TensorFlow GPU support
+            requests:
+              cpu: "0.5"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 5
+---
+# Deployment for Scala Marketplace API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrtodp-scala-marketplace
+  labels:
+    app: mrtodp
+    component: scala-marketplace
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mrtodp
+      component: scala-marketplace
+  template:
+    metadata:
+      labels:
+        app: mrtodp
+        component: scala-marketplace
+    spec:
+      containers:
+        - name: scala-marketplace
+          image: mrtodp-backend:latest
+          command: ["/bin/bash", "-c", "cd /app/backend/scala && sbt 'runMain com.mrtodp.api.Server'"]
+          env:
+            - name: POSTGRES_HOST
+              value: "mrtodp-postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: "mrtodp"
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mrtodp-secrets
+                  key: postgres-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mrtodp-secrets
+                  key: jwt-secret
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "0.5"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 5
+---
+# Deployment for Elixir Marketplace Server
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrtodp-elixir-marketplace
+  labels:
+    app: mrtodp
+    component: elixir-marketplace
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mrtodp
+      component: elixir-marketplace
+  template:
+    metadata:
+      labels:
+        app: mrtodp
+        component: elixir-marketplace
+    spec:
+      containers:
+        - name: elixir-marketplace
+          image: mrtodp-backend:latest
+          command: ["/bin/bash", "-c", "cd /app/backend/elixir && mix phx.server"]
+          env:
+            - name: POSTGRES_HOST
+              value: "mrtodp-postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: "mrtodp"
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mrtodp-secrets
+                  key: postgres-password
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: mrtodp-secrets
+                  key: jwt-secret
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+            requests:
+              cpu: "0.5"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5000
+            initialDelaySeconds: 20
+            periodSeconds: 5
+---
+# Deployment for React Frontend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrtodp-frontend
+  labels:
+    app: mrtodp
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: mrtodp
+      component: frontend
+  template:
+    metadata:
+      labels:
+        app: mrtodp
+        component: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: mrtodp-frontend:latest
+          command: ["/bin/bash", "-c", "cd /app/frontend && npm start"]
+          env:
+            - name: REACT_APP_API_URL
+              value: "http://mrtodp-service:5000"
+            - name: REACT_APP_WS_URL
+              value: "ws://mrtodp-service:4000"
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: "512Mi"
+            requests:
+              cpu: "0.25"
+              memory: "256Mi"
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+---
+# PostgreSQL Deployment for Marketplace
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mrtodp-postgres
+  labels:
+    app: mrtodp
+    component: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mrtodp
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: mrtodp
+        component: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:14
+          env:
+            - name: POSTGRES_DB
+              value: "mrtodp"
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mrtodp-secrets
+                  key: postgres-password
+          resources:
+            limits:
+              cpu: "0.5"
+              memory: "512Mi"
+            requests:
+              cpu: "0.25"
+              memory: "256Mi"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-data
+          emptyDir: {}
+---
+# Horizontal Pod Autoscaling for Scalability
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mrtodp-orchestrator-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mrtodp-orchestrator
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mrtodp-ai-engine-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mrtodp-ai-engine
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: AverageValue
+          averageValue: 800Mi
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mrtodp-scala-marketplace-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mrtodp-scala-marketplace
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mrtodp-elixir-marketplace-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mrtodp-elixir-marketplace
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: mrtodp-frontend-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: mrtodp-frontend
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
+# Secret for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mrtodp-secrets
+type: Opaque
+data:
+  postgres-password: cG9zdGdyZXM= # base64-encoded "postgres"
+  jwt-secret: c2VjcmV0 # base64-encoded "secret"
+```
