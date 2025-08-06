@@ -1,0 +1,522 @@
+```yaml
+# deploy/aws_config.yml
+# Purpose: Configures AWS ECS task definitions for deploying the Multi-Robot Task Orchestration
+# and Delegation Platform (MRTODP) on Amazon ECS with Fargate. Defines tasks for the C++ orchestrator,
+# Python AI engine, Scala/Elixir marketplace, and React frontend. Specifies CPU, memory, and networking
+# requirements, integrates with AWS services (e.g., S3 for skill storage, Secrets Manager for credentials),
+# and includes environment variables from .env.example. Exposes port 5000 for API access and includes
+# detailed comments for maintainability, targeting advanced users (e.g., DevOps engineers, robotics developers).
+# Assumes Docker images from deploy/Dockerfile and aligns with architecture.md, setup.md, and kubernetes.yml.
+
+---
+# ECS Cluster Configuration
+AWSTemplateFormatVersion: '2010-09-09'
+Description: AWS ECS deployment for MRTODP
+
+Resources:
+  # ECS Cluster
+  MRTODPCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: mrtodp-cluster
+      CapacityProviders:
+        - FARGATE
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE
+          Weight: 1
+
+  # Task Definition for C++ Orchestrator
+  OrchestratorTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: mrtodp-orchestrator
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024' # 1 vCPU
+      Memory: '2048' # 2 GB
+      ContainerDefinitions:
+        - Name: orchestrator
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/mrtodp-backend:latest
+          Command:
+            - /bin/bash
+            - -c
+            - source /opt/ros/humble/setup.bash && /app/backend/cpp/task_manager/build/orchestrator
+          Essential: true
+          Environment:
+            - Name: ROS_MASTER_URI
+              Value: http://localhost:11311
+            - Name: SQLITE_DB_PATH
+              Value: /app/data/tasks.db
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/mrtodp-orchestrator
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: orchestrator
+          PortMappings:
+            - ContainerPort: 5000
+              Protocol: tcp
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:5000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 10
+
+  # Task Definition for Python AI Engine
+  AIEngineTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: mrtodp-ai-engine
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '2048' # 2 vCPU
+      Memory: '4096' # 4 GB
+      ContainerDefinitions:
+        - Name: ai-engine
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/mrtodp-backend:latest
+          Command:
+            - /bin/bash
+            - -c
+            - cd /app/backend/python/ai_engine && python3 cli.py
+          Essential: true
+          Environment:
+            - Name: GRPC_SERVER
+              Value: localhost:50051
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
+          Secrets:
+            - Name: AWS_ACCESS_KEY_ID
+              ValueFrom: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:mrtodp-secrets-AccessKeyId
+            - Name: AWS_SECRET_ACCESS_KEY
+              ValueFrom: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:mrtodp-secrets-SecretAccessKey
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/mrtodp-ai-engine
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ai-engine
+          PortMappings:
+            - ContainerPort: 5000
+              Protocol: tcp
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:5000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 15
+
+  # Task Definition for Scala Marketplace
+  ScalaMarketplaceTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: mrtodp-scala-marketplace
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024' # 1 vCPU
+      Memory: '2048' # 2 GB
+      ContainerDefinitions:
+        - Name: scala-marketplace
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/mrtodp-backend:latest
+          Command:
+            - /bin/bash
+            - -c
+            - cd /app/backend/scala && sbt "runMain com.mrtodp.api.Server"
+          Essential: true
+          Environment:
+            - Name: POSTGRES_HOST
+              Value: !GetAtt RDSInstance.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: '5432'
+            - Name: POSTGRES_DB
+              Value: mrtodp
+            - Name: POSTGRES_USER
+              Value: postgres
+            - Name: S3_BUCKET
+              Value: mrtodp-skills
+          Secrets:
+            - Name: POSTGRES_PASSWORD
+              ValueFrom: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:mrtodp-secrets-PostgresPassword
+            - Name: JWT_SECRET
+              ValueFrom: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:mrtodp-secrets-JwtSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/mrtodp-scala-marketplace
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: scala-marketplace
+          PortMappings:
+            - ContainerPort: 5000
+              Protocol: tcp
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:5000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 20
+
+  # Task Definition for Elixir Marketplace
+  ElixirMarketplaceTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: mrtodp-elixir-marketplace
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '1024' # 1 vCPU
+      Memory: '2048' # 2 GB
+      ContainerDefinitions:
+        - Name: elixir-marketplace
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/mrtodp-backend:latest
+          Command:
+            - /bin/bash
+            - -c
+            - cd /app/backend/elixir && mix phx.server
+          Essential: true
+          Environment:
+            - Name: POSTGRES_HOST
+              Value: !GetAtt RDSInstance.Endpoint.Address
+            - Name: POSTGRES_PORT
+              Value: '5432'
+            - Name: POSTGRES_DB
+              Value: mrtodp
+            - Name: POSTGRES_USER
+              Value: postgres
+            - Name: S3_BUCKET
+              Value: mrtodp-skills
+          Secrets:
+            - Name: POSTGRES_PASSWORD
+              ValueFrom: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:mrtodp-secrets-PostgresPassword
+            - Name: JWT_SECRET
+              ValueFrom: !Sub arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:mrtodp-secrets-JwtSecret
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/mrtodp-elixir-marketplace
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: elixir-marketplace
+          PortMappings:
+            - ContainerPort: 5000
+              Protocol: tcp
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:5000/health || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 20
+
+  # Task Definition for React Frontend
+  FrontendTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: mrtodp-frontend
+      ExecutionRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskExecutionRole
+      TaskRoleArn: !Sub arn:aws:iam::${AWS::AccountId}:role/ecsTaskRole
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '512' # 0.5 vCPU
+      Memory: '1024' # 1 GB
+      ContainerDefinitions:
+        - Name: frontend
+          Image: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/mrtodp-frontend:latest
+          Command:
+            - /bin/bash
+            - -c
+            - cd /app/frontend && npm start
+          Essential: true
+          Environment:
+            - Name: REACT_APP_API_URL
+              Value: !Sub http://${LoadBalancer.DNSName}:5000
+            - Name: REACT_APP_WS_URL
+              Value: !Sub ws://${LoadBalancer.DNSName}:4000
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: /ecs/mrtodp-frontend
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: frontend
+          PortMappings:
+            - ContainerPort: 3000
+              Protocol: tcp
+          HealthCheck:
+            Command:
+              - CMD-SHELL
+              - curl -f http://localhost:3000 || exit 1
+            Interval: 30
+            Timeout: 5
+            Retries: 3
+            StartPeriod: 10
+
+  # ECS Service for Orchestrator
+  OrchestratorService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref MRTODPCluster
+      ServiceName: mrtodp-orchestrator-service
+      TaskDefinition: !Ref OrchestratorTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - subnet-12345678 # Replace with your subnet IDs
+            - subnet-87654321
+          SecurityGroups:
+            - sg-12345678 # Replace with your security group ID
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref OrchestratorTargetGroup
+          ContainerName: orchestrator
+          ContainerPort: 5000
+
+  # ECS Service for AI Engine
+  AIEngineService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref MRTODPCluster
+      ServiceName: mrtodp-ai-engine-service
+      TaskDefinition: !Ref AIEngineTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - subnet-12345678
+            - subnet-87654321
+          SecurityGroups:
+            - sg-12345678
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref AIEngineTargetGroup
+          ContainerName: ai-engine
+          ContainerPort: 5000
+
+  # ECS Service for Scala Marketplace
+  ScalaMarketplaceService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref MRTODPCluster
+      ServiceName: mrtodp-scala-marketplace-service
+      TaskDefinition: !Ref ScalaMarketplaceTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - subnet-12345678
+            - subnet-87654321
+          SecurityGroups:
+            - sg-12345678
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref ScalaMarketplaceTargetGroup
+          ContainerName: scala-marketplace
+          ContainerPort: 5000
+
+  # ECS Service for Elixir Marketplace
+  ElixirMarketplaceService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref MRTODPCluster
+      ServiceName: mrtodp-elixir-marketplace-service
+      TaskDefinition: !Ref ElixirMarketplaceTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - subnet-12345678
+            - subnet-87654321
+          SecurityGroups:
+            - sg-12345678
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref ElixirMarketplaceTargetGroup
+          ContainerName: elixir-marketplace
+          ContainerPort: 5000
+
+  # ECS Service for Frontend
+  FrontendService:
+    Type: AWS::ECS::Service
+    Properties:
+      Cluster: !Ref MRTODPCluster
+      ServiceName: mrtodp-frontend-service
+      TaskDefinition: !Ref FrontendTaskDefinition
+      DesiredCount: 2
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - subnet-12345678
+            - subnet-87654321
+          SecurityGroups:
+            - sg-12345678
+          AssignPublicIp: ENABLED
+      LoadBalancers:
+        - TargetGroupArn: !Ref FrontendTargetGroup
+          ContainerName: frontend
+          ContainerPort: 3000
+
+  # Application Load Balancer
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Subnets:
+        - subnet-12345678
+        - subnet-87654321
+      SecurityGroups:
+        - sg-12345678
+      Scheme: internet-facing
+      Type: application
+
+  # Target Groups
+  OrchestratorTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: vpc-12345678 # Replace with your VPC ID
+      Port: 5000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+
+  AIEngineTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: vpc-12345678
+      Port: 5000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+
+  ScalaMarketplaceTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: vpc-12345678
+      Port: 5000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+
+  ElixirMarketplaceTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: vpc-12345678
+      Port: 5000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+
+  FrontendTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: vpc-12345678
+      Port: 3000
+      Protocol: HTTP
+      TargetType: ip
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 3
+
+  # Load Balancer Listener
+  LoadBalancerListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref FrontendTargetGroup
+
+  # RDS Instance for PostgreSQL
+  RDSInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceClass: db.t3.micro
+      Engine: postgres
+      EngineVersion: '14.10'
+      AllocatedStorage: 20
+      DBName: mrtodp
+      MasterUsername: postgres
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:mrtodp-secrets:SecretString:PostgresPassword}}'
+      VPCSecurityGroups:
+        - sg-12345678
+      DBSubnetGroupName: mrtodp-subnet-group
+
+  # S3 Bucket for Skill Storage
+  SkillsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: mrtodp-skills
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+
+  # Log Groups
+  OrchestratorLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/mrtodp-orchestrator
+      RetentionInDays: 30
+
+  AIEngineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/mrtodp-ai-engine
+      RetentionInDays: 30
+
+  ScalaMarketplaceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/mrtodp-scala-marketplace
+      RetentionInDays: 30
+
+  ElixirMarketplaceLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/mrtodp-elixir-marketplace
+      RetentionInDays: 30
+
+  FrontendLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/mrtodp-frontend
+      RetentionInDays: 30
+```
