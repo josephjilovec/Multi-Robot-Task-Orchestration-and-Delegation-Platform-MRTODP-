@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package orchestrator;
+
+// Task request message
+message TaskRequest {
+    string task_type = 1;
+    string robot_id = 2;
+    map<string, string> parameters = 3;
+}
+
+// Task response message
+message TaskResponse {
+    bool success = 1;
+    string message = 2;
+    string task_id = 3;
+    string robot_id = 4;
+}
+
+// Orchestrator service
+service Orchestrator {
+    rpc DelegateTask(TaskRequest) returns (TaskResponse);
+    rpc GetTaskStatus(TaskRequest) returns (TaskResponse);
+}
+

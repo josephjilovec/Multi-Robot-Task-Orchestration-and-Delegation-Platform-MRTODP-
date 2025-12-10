@@ -1,0 +1,16 @@
+[deps]
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+Yao = "5872b779-8223-5990-8dd0-5abbb0748c8c"
+CUDA = "052768ef-5323-5732-b1bb-65c6e920017d"
+JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
+SQLite = "0aa819cd-b072-5fc4-871d-7fdb42b50dfc"
+Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[compat]
+Flux = "0.14.0"
+Yao = "0.8.0"
+CUDA = "5.4.0"
+julia = "1.10"
+

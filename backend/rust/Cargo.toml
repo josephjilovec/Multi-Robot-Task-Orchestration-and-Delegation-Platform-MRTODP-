@@ -1,0 +1,43 @@
+# backend/rust/Cargo.toml
+# Purpose: Configuration file for the MRTODP Rust crate, defining dependencies and build settings
+# for the concurrent task scheduling library. Includes Tokio for async concurrency, serde for
+# JSON serialization, and cbindgen for generating C headers for FFI with
+# backend/python/ai_engine/delegator.py. Specifies compatible versions to avoid conflicts and
+# supports production use for advanced users (e.g., robotics engineers).
+
+[package]
+name = "mrtodp-scheduler"
+version = "0.1.0"
+edition = "2021"
+description = "Concurrent task scheduler for MRTODP, interfacing with Python via FFI"
+license = "MIT"
+
+# Define library as a dynamic library for FFI
+[lib]
+crate-type = ["cdylib"]
+
+# Dependencies for production code
+[dependencies]
+tokio = { version = "1.38.0", features = ["full"] } # Async runtime for low-latency scheduling
+serde = { version = "1.0.210", features = ["derive"] } # JSON serialization for task data
+serde_json = "1.0.128" # JSON parsing for FFI communication
+lazy_static = "1.5.0" # Static initialization for global scheduler instance
+
+# Development dependencies for testing
+[dev-dependencies]
+tokio = { version = "1.38.0", features = ["test-util"] } # Test utilities for async tests
+
+# Build dependencies for generating FFI headers
+[build-dependencies]
+cbindgen = "0.27.0" # Generate C headers for Python FFI integration
+
+# Build configuration
+[profile.release]
+opt-level = 3 # Optimize for performance
+lto = true # Link-time optimization for smaller binaries
+codegen-units = 1 # Reduce codegen units for better optimization
+
+# Ensure deterministic builds for reproducibility
+[profile.dev]
+incremental = false
+

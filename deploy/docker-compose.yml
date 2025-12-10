@@ -1,0 +1,67 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: mrtodp
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  python-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      - DB_PATH=/app/data/tasks.db
+      - GRPC_ENDPOINT=localhost:50051
+    volumes:
+      - ../data:/app/data
+    depends_on:
+      - postgres
+
+  scala-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_DB=mrtodp
+    depends_on:
+      - postgres
+
+  elixir-api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - SCALA_API_URL=http://scala-api:8080
+    depends_on:
+      - scala-api
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_MARKETPLACE_URL=http://localhost:4000
+    depends_on:
+      - scala-api
+      - elixir-api
+
+volumes:
+  postgres_data:
+
